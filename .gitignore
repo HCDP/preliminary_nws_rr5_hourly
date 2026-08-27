@@ -1,0 +1,5 @@
+# Data files — regenerate with the pull/append scripts (see README.md)
+*.csv
+
+# Run logs from the cron jobs (see cron_*.txt)
+runlogs/

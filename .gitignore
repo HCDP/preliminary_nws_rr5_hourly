@@ -3,3 +3,6 @@
 
 # Run logs from the cron jobs (see cron_*.txt)
 runlogs/
+
+# local credential file — not committed
+token.env

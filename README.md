@@ -243,7 +243,8 @@ in normal hourly operation.
   text shown on https://www.weather.gov/hfo/RR5_archive, but as JSON and
   with ~7 days of retention instead of 72 hours.
 - The product is provisional, non-quality-controlled gauge data.
-- ~190 of the ~200 listed gauges actively report; the rest transmit "M".
+- ~192 of the 200 listed gauges actively report; the rest transmit "M".
+  203 gauges have appeared in the master since collection began.
 - Datetimes in both output files are UTC text (`YYYY-MM-DD HH:MM:SS`). Note
   that the companion NWS API workflow writes HST text instead — the two
   masters are not directly joinable on `datetime` without converting.

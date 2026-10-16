@@ -34,18 +34,41 @@
 #  - Value coding: 'M' (missing) -> NA; 'T' (trace) -> 0.001 in.
 #  - If an hour was reissued/corrected, the newest issuance wins.
 
-# code/ directory this script lives in (Rscript --file=...; falls back to
-# the working directory if the script is sourced interactively). The
-# project root -- where the data directories live -- is its parent. Source
-# the station-list function from code/ so the pair stays linked no matter
-# where the process was launched from.
-codeDir <- local({
-  fa <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
-  if (length(fa))
-    dirname(normalizePath(sub("^--file=", "", fa[1]), winslash = "/"))
-  else getwd()
-})
-mainDir <- dirname(codeDir)
+# --- directories from the environment --------------------------------------
+# This workflow takes its paths from the environment rather than deriving
+# them from the script's own location. RR5_PROJECT_ROOT is REQUIRED; the
+# directories under it can each be redirected individually. An unset root is
+# a hard error on purpose -- the old behaviour fell back to the script's
+# parent (or, when sourced, the working directory), which could silently
+# write a whole run into the wrong tree.
+#
+#   RR5_PROJECT_ROOT           required   project root
+#   RR5_CODE_DIR               optional   default $RR5_PROJECT_ROOT/code
+#   RR5_DATA_OUT               optional   default $RR5_PROJECT_ROOT/data_out
+#   RR5_DATA_CATALOG           optional   default $RR5_PROJECT_ROOT/dataCatalog
+#
+# See envs/rr5.env for a ready-to-source file, and the cron file for how
+# the scheduled job loads it.
+.env_dir <- function(var, default = NULL, must_exist = TRUE) {
+  v <- Sys.getenv(var)
+  if (!nzchar(v)) {
+    if (is.null(default))
+      stop(var, " is not set. This workflow requires its directories to come ",
+           "from the environment -- export ", var, " (see envs/rr5.env) ",
+           "before running.", call. = FALSE)
+    v <- default
+  }
+  v <- path.expand(v)
+  if (must_exist && !dir.exists(v))
+    stop(var, " is set to a directory that does not exist: ", v, call. = FALSE)
+  normalizePath(v, winslash = "/", mustWork = FALSE)
+}
+mainDir     <- .env_dir("RR5_PROJECT_ROOT")
+codeDir     <- .env_dir("RR5_CODE_DIR",     file.path(mainDir, "code"))
+out_dir     <- .env_dir("RR5_DATA_OUT",     file.path(mainDir, "data_out"),
+                        must_exist = FALSE)
+catalog_dir <- .env_dir("RR5_DATA_CATALOG", file.path(mainDir, "dataCatalog"),
+                        must_exist = FALSE)
 
 source(file.path(codeDir, "get_rr5_stations_fn.R"))   # loads httr2/dplyr/
                                                       # tibble, get_rr5_stations()
@@ -56,8 +79,6 @@ suppressPackageStartupMessages(library(purrr))
 # message() semantics: arguments pasted with no separator, newline appended.
 say <- function(...) cat(..., "\n", sep = "")
 
-# data lives at the project root, not in the working directory
-out_dir  <- file.path(mainDir, "data_out")
 obs_path <- file.path(out_dir, "rr5_obs_long.csv")
 
 args        <- commandArgs(trailingOnly = TRUE)

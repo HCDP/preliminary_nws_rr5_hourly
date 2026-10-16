@@ -22,17 +22,38 @@ suppressPackageStartupMessages(library(readr))   # much faster than read.csv at 
 # message() semantics: arguments pasted with no separator, newline appended.
 say <- function(...) cat(..., "\n", sep = "")
 
-# code/ directory this script lives in; its parent is the project root, so
-# the default data_out/ matches get_rr5_archive.R and the pair works
-# from any working directory
-codeDir <- local({
-  fa <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
-  if (length(fa))
-    dirname(normalizePath(sub("^--file=", "", fa[1]), winslash = "/"))
-  else getwd()
-})
-mainDir <- dirname(codeDir)
-out_dir <- file.path(mainDir, "data_out")
+# --- directories from the environment --------------------------------------
+# This workflow takes its paths from the environment rather than deriving
+# them from the script's own location. RR5_PROJECT_ROOT is REQUIRED; the
+# directories under it can each be redirected individually. An unset root is
+# a hard error on purpose -- the old behaviour fell back to the script's
+# parent (or, when sourced, the working directory), which could silently
+# write a whole run into the wrong tree.
+#
+#   RR5_PROJECT_ROOT           required   project root
+#   RR5_CODE_DIR               optional   default $RR5_PROJECT_ROOT/code
+#   RR5_DATA_OUT               optional   default $RR5_PROJECT_ROOT/data_out
+#   RR5_DATA_CATALOG           optional   default $RR5_PROJECT_ROOT/dataCatalog
+#
+# See envs/rr5.env for a ready-to-source file, and the cron file for how
+# the scheduled job loads it.
+.env_dir <- function(var, default = NULL, must_exist = TRUE) {
+  v <- Sys.getenv(var)
+  if (!nzchar(v)) {
+    if (is.null(default))
+      stop(var, " is not set. This workflow requires its directories to come ",
+           "from the environment -- export ", var, " (see envs/rr5.env) ",
+           "before running.", call. = FALSE)
+    v <- default
+  }
+  v <- path.expand(v)
+  if (must_exist && !dir.exists(v))
+    stop(var, " is set to a directory that does not exist: ", v, call. = FALSE)
+  normalizePath(v, winslash = "/", mustWork = FALSE)
+}
+mainDir <- .env_dir("RR5_PROJECT_ROOT")
+out_dir <- .env_dir("RR5_DATA_OUT", file.path(mainDir, "data_out"),
+                    must_exist = FALSE)
 
 args        <- commandArgs(trailingOnly = TRUE)
 new_file    <- if (length(args) >= 1) args[1] else file.path(out_dir, "rr5_obs_long.csv")

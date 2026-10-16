@@ -62,16 +62,19 @@ runs must happen at least weekly to avoid gaps in the master.
 ## Files
 
 All R code lives in `code/`; data directories sit beside it at the project
-root, so the scripts run correctly from any working directory.
+root. Every path comes from the environment, so the scripts run correctly
+from any working directory — and refuse to run at all without it.
 
 ```
-<project root>/          <- data_out/ and dataCatalog/ are created here
-`-- code/                <- all four .R files live here, together
+$RR5_PROJECT_ROOT/       <- REQUIRED; data_out/ and dataCatalog/ land here
+|-- code/                <- all four .R files live here, together
+`-- envs/rr5.env         <- the variables, ready to source
 ```
 
-Each script resolves its own location and takes the **parent** as the data
-root, so this nesting matters: put the code at the project root instead and
-the data directories would land one level above it.
+Nothing is inferred from a script's own location. `RR5_PROJECT_ROOT` must
+be exported before either script runs; an unset root, or one pointing at a
+directory that does not exist, is a fatal error rather than a silent
+fallback. See [Directory configuration](#directory-configuration).
 
 | File | Role |
 |---|---|
@@ -80,26 +83,67 @@ the data directories would land one level above it.
 | `code/append_rr5_master.R` | snapshot → master accumulator |
 | `code/install_deps.R` | one-time CRAN dependency installer |
 | `cron_rr5.txt` | ready-to-install hourly crontab entry |
+| `envs/rr5.env` | the required directory variables, ready to `source` |
 | `dataCatalog/rr5_stations.csv` | gauge list with freshness timestamps |
 | `data_out/rr5_obs_long.csv` | latest fetch window (overwritten each run) |
 | `data_out/rr5_master.csv` | permanent deduplicated record |
 | `runlogs/` | cron stdout/stderr logs (gitignored) |
 
+### Directory configuration
+
+All four paths come from the environment. Only the root is required; the
+three directories default to the conventional subdirectories beneath it, so
+a standard deployment needs just the one variable.
+
+| Variable | Required | Default | Holds |
+|---|---|---|---|
+| `RR5_PROJECT_ROOT` | **yes** | — | project root; everything below defaults relative to it |
+| `RR5_CODE_DIR` | no | `$RR5_PROJECT_ROOT/code` | the `.R` files; must exist |
+| `RR5_DATA_OUT` | no | `$RR5_PROJECT_ROOT/data_out` | snapshot + master; created on demand |
+| `RR5_DATA_CATALOG` | no | `$RR5_PROJECT_ROOT/dataCatalog` | station catalog; created on demand |
+
+`envs/rr5.env` holds these ready to source:
+
+```bash
+. /path/to/preliminary_nws_rr5_hourly/envs/rr5.env
+```
+
+**Why required rather than inferred.** The scripts used to derive the root
+from their own location (`--file=` under `Rscript`, the sourced file's path
+when sourced, the working directory otherwise). That last fallback was the
+problem: sourced or launched in a way that lost the path, a run would
+quietly build `data_out/` and `dataCatalog/` wherever it happened to be
+standing and write a full fetch into the wrong tree. Requiring the variable
+turns that silent mis-write into an immediate, readable abort:
+
+```
+Error: RR5_PROJECT_ROOT is not set. This workflow requires its directories
+to come from the environment -- export RR5_PROJECT_ROOT (see
+envs/rr5.env) before running.
+```
+
+The names are `RR5_`-prefixed rather than a bare `PROJECT_ROOT`, so no two
+of the hourly workflows can collide in a shell or crontab that has more than
+one loaded.
+
 ## Usage
 
 ```bash
+. envs/rr5.env                      # REQUIRED — sets RR5_PROJECT_ROOT
 Rscript code/get_rr5_archive.R      # fetch (catalog-driven window)
 Rscript code/append_rr5_master.R    # fold into the master
 ```
 
 Run both, in that order, on a schedule (hourly works well; the product is
-issued once per hour). Because the scripts anchor their own paths, cron can
-call them by absolute path with no `cd`. Chain them so a failed fetch does
-not re-fold a stale snapshot:
+issued once per hour). The scripts take every path from the environment, so
+they can be called from anywhere with no `cd` — but the variables must be
+loaded first, in the same shell. Chain them so a failed fetch does not
+re-fold a stale snapshot:
 
 ```bash
-Rscript /path/to/code/get_rr5_archive.R && \
-  Rscript /path/to/code/append_rr5_master.R
+. /path/to/preliminary_nws_rr5_hourly/envs/rr5.env && \
+  Rscript "$RR5_PROJECT_ROOT/code/get_rr5_archive.R" && \
+  Rscript "$RR5_PROJECT_ROOT/code/append_rr5_master.R"
 ```
 
 A full run is quick — one listing request plus one request per product
@@ -107,13 +151,21 @@ hour, about 20 s for a 60-product window.
 
 ### Scheduling
 
-`cron_rr5.txt` holds the ready-to-install crontab entry — copy its second
+`cron_rr5.txt` holds the ready-to-install crontab entry — copy its last
 line into `crontab -e`:
 
 ```
-45 * * * * /bin/sh -c '<abs>/code/get_rr5_archive.R && <abs>/code/append_rr5_master.R' \
+45 * * * * /bin/sh -c '. <abs>/envs/rr5.env && C=${RR5_CODE_DIR:-$RR5_PROJECT_ROOT/code} \
+             && /usr/bin/Rscript "$C/get_rr5_archive.R" \
+             && /usr/bin/Rscript "$C/append_rr5_master.R"' \
              >> <abs>/runlogs/nwsrr5_hrly.out 2>> <abs>/runlogs/nwsrr5_hrly.err
 ```
+
+**Sourcing the env file inside the cron command is mandatory.** Cron's
+environment is minimal and inherits nothing from an interactive shell, so a
+crontab line that just calls the scripts now aborts every run. The
+`${RR5_CODE_DIR:-...}` default keeps the line correct whether or not that
+optional override is set in the env file.
 
 **:45 past the hour** because the RR5HFO product is issued between :30 and
 :35 past (measured across a full 7-day retention window; never later than
@@ -151,7 +203,8 @@ The fetcher needs exactly **one** other local file.
 
 | Needed | Why |
 |---|---|
-| `code/get_rr5_stations_fn.R` | sourced by the fetcher; must sit in the same directory. Missing it is fatal at startup. |
+| `RR5_PROJECT_ROOT` exported | every path derives from it; unset is fatal at startup. See [Directory configuration](#directory-configuration). |
+| `code/get_rr5_stations_fn.R` | sourced by the fetcher; must sit in `$RR5_CODE_DIR`. Missing it is fatal at startup. |
 | R ≥ 4.1 plus `httr2`, `dplyr`, `purrr`, `tibble`, `readr` | run `Rscript code/install_deps.R` once. |
 | network access to `api.weather.gov` | no API key — the API only requires a `User-Agent` header, set in the scripts |
 

@@ -1,6 +1,6 @@
-# RR5 hourly rainfall — fetch + fold into master, :45 past every hour.
+# RR5 hourly rainfall — fetch + write to the HCDP database, :45 past every hour.
 # Sources envs/rr5.env first: the scripts REQUIRE RR5_PROJECT_ROOT and abort
 # without it, and cron's environment inherits nothing from a shell.
 # ${RR5_CODE_DIR:-...} keeps the line correct whether or not that optional
 # override is set in the env file.
-45 * * * * /bin/sh -c '. /home/hawaii_climate_products_container/preliminary/data_aqs_hrly/preliminary_nws_rr5_hourly/envs/rr5.env && C=${RR5_CODE_DIR:-$RR5_PROJECT_ROOT/code} && /usr/bin/Rscript "$C/get_rr5_archive.R" && /usr/bin/Rscript "$C/append_rr5_master.R"' >> /home/hawaii_climate_products_container/preliminary/data_aqs_hrly/preliminary_nws_rr5_hourly/runlogs/nwsrr5_hrly.out 2>> /home/hawaii_climate_products_container/preliminary/data_aqs_hrly/preliminary_nws_rr5_hourly/runlogs/nwsrr5_hrly.err
+45 * * * * /bin/sh -c '. /home/hawaii_climate_products_container/preliminary/data_aqs_hrly/preliminary_nws_rr5_hourly/envs/rr5.env && C=${RR5_CODE_DIR:-$RR5_PROJECT_ROOT/code} && /usr/bin/Rscript "$C/get_rr5_archive.R"' >> /home/hawaii_climate_products_container/preliminary/data_aqs_hrly/preliminary_nws_rr5_hourly/runlogs/nwsrr5_hrly.out 2>> /home/hawaii_climate_products_container/preliminary/data_aqs_hrly/preliminary_nws_rr5_hourly/runlogs/nwsrr5_hrly.err

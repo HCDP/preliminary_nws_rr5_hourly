@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN Rscript -e "install.packages(c('httr2', 'dplyr', 'tibble', 'readr'), repos='https://cloud.r-project.org')"
+RUN Rscript -e "install.packages(c('httr2', 'jsonlite', 'dplyr', 'tibble', 'readr'), repos='https://cloud.r-project.org')"
 
 COPY code/ /workspace/code/
 COPY envs/prod.env /workspace/envs/prod.env

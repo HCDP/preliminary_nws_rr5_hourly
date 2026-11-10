@@ -1,15 +1,15 @@
 # Cache-aware, sourceable function for the RR5 gauge station list —
 # same interface as get_station_catalog() in get_station_catalog_fn.R.
 # Returns a data frame:
-#   station_id | location | source | island | latest_obs_api | latest_obs_data
+#   station_id | location | source | island | latest_obs_api
 # (parsed from the newest RR5HFO product; source "hydronet" = numeric
 # county-gauge IDs in the product text).
 #
 #   latest_obs_api  — the newest product's obs-ending hour if the station
-#                     reported a real value in it (NA if it reported "M")
-#   latest_obs_data — max datetime with a non-NA value per station in YOUR
-#                     collected long data (from obs_file; NA = none)
-# Both are HST text ("YYYY-MM-DD HH:MM:SS HST").
+#                     reported a real value in it (NA if it reported "M"),
+#                     as UTC ISO 8601 text ("YYYY-MM-DDTHH:MM:SSZ")
+# What has already been collected is not tracked here -- the fetcher asks
+# the HCDP database for that.
 #
 # As a library:
 #   source("code/get_rr5_stations_fn.R")
@@ -17,11 +17,7 @@
 #   stns <- get_rr5_stations(refresh = TRUE)    # re-parse newest product + overwrite
 #
 # Arguments:
-#   latest    add the two latest_obs columns when building (default TRUE)
-#   obs_file  long-format RR5 data file for latest_obs_data (default
-#             data_out/rr5_obs_long.csv at the PROJECT ROOT, i.e. the
-#             parent of code/ — not the working directory; point at
-#             data_out/rr5_master.csv for the full record)
+#   latest    add the latest_obs_api column when building (default TRUE)
 #   dir       directory holding the CSV (default: dataCatalog/ at the
 #             project root — NOT the working directory — created if
 #             missing; file is rr5_stations.csv inside it)
@@ -74,14 +70,10 @@ say <- function(...) cat(..., "\n", sep = "")
 }
 .data_dir    <- .env_dir("RR5_PROJECT_ROOT")
 .code_dir    <- .env_dir("RR5_CODE_DIR",     file.path(.data_dir, "code"))
-.out_dir     <- .env_dir("RR5_DATA_OUT",     file.path(.data_dir, "data_out"),
-                         must_exist = FALSE)
 .catalog_dir <- .env_dir("RR5_DATA_CATALOG", file.path(.data_dir, "dataCatalog"),
                          must_exist = FALSE)
 
 get_rr5_stations <- function(latest = TRUE,
-                             obs_file = file.path(.out_dir,
-                                                  "rr5_obs_long.csv"),
                              dir = .catalog_dir,
                              write_csv = TRUE, refresh = FALSE,
                              ua = "R script (hcdp@hawaii.edu)") {
@@ -116,9 +108,10 @@ get_rr5_stations <- function(latest = TRUE,
   prod_time <- if (length(bm) == 4) {
     yr <- format(as.POSIXct(newest$issuanceTime, format = "%Y-%m-%dT%H:%M:%S",
                             tz = "UTC"), "%Y")
+    # the SHEF hour is HST; written as UTC like every other timestamp here
     format(as.POSIXct(sprintf("%s-%s-%s %s:00:00", yr, bm[2], bm[3], bm[4]),
                       tz = "Pacific/Honolulu"),
-           "%Y-%m-%d %H:%M:%S HST")
+           "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   } else NA_character_
 
   # --- parse gauge lines ---------------------------------------------------
@@ -149,30 +142,7 @@ get_rr5_stations <- function(latest = TRUE,
           newest$issuanceTime, " (",
           sum(!is.na(station_list$latest_obs_api)), " reporting)")
 
-  # --- latest_obs_data: newest non-NA value in collected long data ---------
-  if (latest) {
-    if (file.exists(obs_file)) {
-      say("Deriving latest_obs_data from ", obs_file)
-      obs <- read.csv(obs_file)
-      latest_tbl <- obs |>
-        filter(!is.na(value)) |>
-        mutate(ts = as.POSIXct(datetime, tz = "UTC")) |>
-        group_by(station_id) |>
-        summarise(latest_obs_data = format(max(ts, na.rm = TRUE),
-                                           "%Y-%m-%d %H:%M:%S HST",
-                                           tz = "Pacific/Honolulu"),
-                  .groups = "drop")
-      station_list <- left_join(station_list, latest_tbl, by = "station_id")
-      say(sum(!is.na(station_list$latest_obs_data)), " of ",
-              nrow(station_list), " stations have data in ", obs_file)
-    } else {
-      warning("obs file not found (", obs_file,
-              ") — latest_obs_data set to NA", call. = FALSE, immediate. = TRUE)
-      station_list$latest_obs_data <- NA_character_
-    }
-  } else {
-    station_list$latest_obs_api <- NULL
-  }
+  if (!latest) station_list$latest_obs_api <- NULL
 
   # --- save ---------------------------------------------------------------
   if (write_csv) {

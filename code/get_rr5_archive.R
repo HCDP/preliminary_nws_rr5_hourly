@@ -32,8 +32,9 @@
 #
 # Output: the HCDP database (nothing is written locally except the station
 #         list, $RR5_DATA_CATALOG/rr5_stations.csv, default dataCatalog/
-#         under $RR5_PROJECT_ROOT). Needs the HCDP token in token.env at the
-#         project root, or the file named by $HCDP_TOKEN_FILE.
+#         under $RR5_PROJECT_ROOT). Needs the HCDP API token: by default from
+#         $HCDP_API_TOKEN, otherwise from token.env at the project root or the
+#         file named by $HCDP_TOKEN_FILE.
 #
 # Notes:
 #  - Products come from https://api.weather.gov/products/types/RR5/locations/HFO
@@ -80,7 +81,7 @@ catalog_dir <- .env_dir("RR5_DATA_CATALOG", file.path(mainDir, "dataCatalog"),
 source(file.path(codeDir, "get_rr5_stations_fn.R"))   # loads httr2/dplyr/
                                                       # tibble, get_rr5_stations()
 # the HCDP database client: hcdp_get(), hcdp_write(), and api_url. Reads the
-# token now, so a missing token.env fails here, before any fetching.
+# token now, so a missing token fails here, before any fetching.
 source(file.path(codeDir, "hcdp_db_acquisition.R"))
 suppressPackageStartupMessages(library(purrr))
 

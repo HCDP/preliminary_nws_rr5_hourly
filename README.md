@@ -14,6 +14,28 @@ locally.
 
 ![RR5 rainfall workflow](workflow_rr5.svg)
 
+## Running the workflow
+
+**The whole workflow is one file: `code/get_rr5_archive.R`.** Running it
+builds the station list from the newest RR5 product, asks the HCDP database
+for its newest stored hour, fetches the product-hours since then, and writes
+them to the database. It loads its two helpers
+(`code/get_rr5_stations_fn.R`, `code/hcdp_db_acquisition.R`) itself.
+Nothing else needs to run — there is no append step.
+
+| | |
+|---|---|
+| **When** | once an hour, at **:45 past the hour** (cron `45 * * * *`) — the same minute in HST and UTC; see [Scheduling](#scheduling) for why |
+| **How long** | **under 10 seconds** for an hourly run (the 2026-11-09 15:45 cron run took 8 s); 36 seconds for a full 7-day catch-up |
+| **Needs** | `RR5_PROJECT_ROOT` set — `envs/rr5.env` here, `envs/prod.env` in the container — and the HCDP API token, in the `HCDP_API_TOKEN` environment variable (default) or a `token.env` file |
+
+```bash
+. envs/rr5.env && Rscript code/get_rr5_archive.R
+```
+
+In the container, `task.sh` (the image's `CMD`) does exactly this: it
+sources `envs/prod.env` and runs that one file.
+
 ## How it works
 
 Each run:
@@ -114,7 +136,7 @@ without it.
 $RR5_PROJECT_ROOT/       <- REQUIRED; dataCatalog/ lands here
 |-- code/                <- the .R files live here, together
 |-- envs/rr5.env         <- the variables, ready to source
-`-- token.env            <- HCDP API token (gitignored; never committed)
+`-- token.env            <- optional token file, if HCDP_API_TOKEN is unset (gitignored)
 ```
 
 Nothing is inferred from a script's own location. `RR5_PROJECT_ROOT` must
@@ -132,7 +154,7 @@ fallback. See [Directory configuration](#directory-configuration).
 | `cron_rr5.txt` | ready-to-install hourly crontab entry |
 | `envs/rr5.env` | the required directory variables, ready to `source` |
 | `containers/Dockerfile`, `containers/task.sh`, `envs/prod.env` | container image and entrypoint — see [Container](#container) |
-| `token.env` | HCDP API token, read at run time (gitignored) |
+| `token.env` | fallback HCDP API token file, read only when `HCDP_API_TOKEN` is unset (gitignored) |
 | `dataCatalog/rr5_stations.csv` | gauge list, rebuilt every run |
 | `data_out/rr5_master.csv` | legacy local record; no longer written — see [Legacy local data](#legacy-local-data) |
 | `runlogs/` | cron stdout/stderr logs (gitignored) |
@@ -187,16 +209,23 @@ variables must be loaded first, in the same shell:
   Rscript "$RR5_PROJECT_ROOT/code/get_rr5_archive.R"
 ```
 
-The database client reads three more variables, all optional:
+The fetcher also reads these variables, all optional:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `HCDP_TOKEN_FILE` | `$RR5_PROJECT_ROOT/token.env` | file holding the API token — the bare token, or a `NAME=value` line |
+| `HCDP_API_TOKEN` | — | **the API token itself — the default way to supply it** (as the HCDP task runner does for MADIS) |
+| `HCDP_TOKEN_FILE` | `$RR5_PROJECT_ROOT/token.env` | token file, used only when `HCDP_API_TOKEN` is unset or empty — the bare token, or a `NAME=value` line |
 | `HCDP_API_URL` | `https://api.hcdp.ikewai.org` | API base URL (point it at a test server) |
 | `HCDP_MASTER_META_URL` | the `Hawaii_Master_Station_Meta.csv` URL above | master station list used for `skn` / `lat` / `lng` |
 
 The token needs `meso_admin` permission, which the API requires for writes.
-A missing or empty token file stops the run at startup, before any fetching.
+Each run logs where its token came from (`HCDP API token: from
+HCDP_API_TOKEN`, or the file path) — never the token itself. With neither a
+non-empty `HCDP_API_TOKEN` nor a token file, the run stops at startup,
+before any fetching: `No HCDP API token: set HCDP_API_TOKEN, or provide a
+token file (...)`. The cron job on this host sets no `HCDP_API_TOKEN`, so it
+uses `token.env`. Never put the token in `envs/*.env` — those files are
+committed.
 
 A run is quick — one listing request plus one request per product hour, and
 a handful of POSTs: under 10 s for a typical 13-product hourly run (~2,300
@@ -220,8 +249,8 @@ Before 2026-11-09 the line chained `&& /usr/bin/Rscript
 line, and paste the one above (or copy the last line of `cron_rr5.txt`).
 Left in place the old line is harmless but pointless: the fetcher no longer
 writes `data_out/rr5_obs_long.csv`, so the append refolds the last stale
-snapshot into `data_out/rr5_master.csv` with no change (`+0` rows). As of
-2026-11-09 the line installed on this host is still the old one.
+snapshot into `data_out/rr5_master.csv` with no change (`+0` rows). The
+line installed on this host was replaced on 2026-11-18.
 
 **Sourcing the env file inside the cron command is mandatory.** Cron's
 environment is minimal and inherits nothing from an interactive shell, so a
@@ -266,11 +295,15 @@ grow without bound; rotate or truncate them if that matters.
 
 ### What a run needs locally
 
+The fetcher needs **two** other local files — the helpers it sources —
+plus the token, which by default is an environment variable rather than a
+file.
+
 | Needed | Why |
 |---|---|
 | `RR5_PROJECT_ROOT` exported | every path derives from it; unset is fatal at startup. See [Directory configuration](#directory-configuration). |
 | `code/get_rr5_stations_fn.R`, `code/hcdp_db_acquisition.R` | sourced by the fetcher; must sit in `$RR5_CODE_DIR`. Missing either is fatal at startup. |
-| `token.env` | the HCDP API token (or the file `$HCDP_TOKEN_FILE` names). Missing it is fatal at startup. |
+| the HCDP API token | in `HCDP_API_TOKEN` (default), or else in `token.env` / the file `$HCDP_TOKEN_FILE` names. Having neither is fatal at startup. |
 | R ≥ 4.1 plus `httr2`, `jsonlite`, `dplyr`, `purrr`, `tibble`, `readr` | `jsonlite` is only *suggested* by `httr2`, so it must be listed explicitly. Run `Rscript code/install_deps.R` once. |
 | network access to `api.weather.gov` | no API key — the API only requires a `User-Agent` header, set in the scripts |
 | network access to `api.hcdp.ikewai.org` | the database lookup and writes |
@@ -292,9 +325,12 @@ its `CMD` runs `task.sh`, which sets `TZ=UTC`, sources `envs/prod.env`
 step any more. Schedule the container **at :45 past every hour**, like the
 cron job.
 
-The token is **not** in the image and is provisioned manually: place it at
-`/workspace/token.env`, or anywhere with `HCDP_TOKEN_FILE` pointing at it.
-Without one the container stops at startup with `token file not found`,
+The token is **not** in the image and is provisioned manually — by
+default as the `HCDP_API_TOKEN` environment variable of the container (how
+the HCDP task runner passes it to the MADIS container). A token file also
+works: `/workspace/token.env`, or anywhere with `HCDP_TOKEN_FILE` pointing
+at it; it is read only when `HCDP_API_TOKEN` is unset or empty. With
+neither, the container stops at startup with `No HCDP API token: ...`,
 before fetching anything.
 
 ## Data notes

@@ -14,7 +14,9 @@
 #   Rscript code/hcdp_db_acquisition.R
 #
 # Environment:
-#   HCDP_TOKEN_FILE   token file (default: token.env at $RR5_PROJECT_ROOT)
+#   HCDP_API_TOKEN    the API token itself -- the default way to supply it
+#   HCDP_TOKEN_FILE   token file, used only when HCDP_API_TOKEN is unset or empty
+#                     (default: token.env at $RR5_PROJECT_ROOT)
 #   HCDP_API_URL      API base URL (default https://api.hcdp.ikewai.org)
 
 suppressPackageStartupMessages(library(httr2))   # load httr2, the HTTP client used for all requests (quietly: startup chatter goes to stderr)
@@ -39,8 +41,11 @@ suppressPackageStartupMessages(library(httr2))   # load httr2, the HTTP client u
 #   variableMetadata: cols variable, unit                                           | key variable
 #   data:            cols station_id, timestamp, variable, value                    | key station_id, timestamp, variable
 
-# API token: read at run time from token.env (git-ignored), never hard-coded or printed.
-# The file may hold the bare token, or a NAME=value line (optional "export" and quotes).
+# API token, never hard-coded or printed. By default it comes from the HCDP_API_TOKEN
+# environment variable (how the HCDP task runner supplies it, as for the MADIS workflow).
+# Only when that is unset or empty is it read from a token file: HCDP_TOKEN_FILE if set,
+# otherwise token.env (git-ignored) at the project root. A token file may hold the bare
+# token, or a NAME=value line (optional "export" and quotes).
 token_file <- Sys.getenv("HCDP_TOKEN_FILE",      # path override, if set; otherwise token.env at the project root
                          file.path(Sys.getenv("RR5_PROJECT_ROOT", "."), "token.env"))
 read_token <- function(path) {                   # define a function returning the token stored in `path`
@@ -52,7 +57,16 @@ read_token <- function(path) {                   # define a function returning t
   if (grepl(kv, x)) x <- sub(kv, "\\2", x)       # keep only the value (a bare token's trailing "=" padding never matches)
   gsub("^[\"']|[\"']$", "", x)                   # drop surrounding quotes, if any
 }                                                # end of read_token
-token <- read_token(token_file)                  # the token, used by the request helpers below
+token <- gsub("^[\"']|[\"']$", "", trimws(Sys.getenv("HCDP_API_TOKEN")))  # 1st choice: the environment variable
+if (nzchar(token)) {                             # set and non-empty: use it
+  cat("HCDP API token: from HCDP_API_TOKEN\n")  # say where it came from (never the token itself)
+} else if (file.exists(token_file)) {            # otherwise fall back to the token file
+  token <- read_token(token_file)                # the token, used by the request helpers below
+  cat("HCDP API token: from", token_file, "\n")  # say where it came from (never the token itself)
+} else {                                         # neither: fail clearly, before any fetching
+  stop("No HCDP API token: set HCDP_API_TOKEN, or provide a token file (", token_file,
+       "; HCDP_TOKEN_FILE overrides that path)", call. = FALSE)
+}                                                # end of token lookup
 
 api_url <- Sys.getenv("HCDP_API_URL", "https://api.hcdp.ikewai.org")  # base URL of the HCDP API (override for testing)
 

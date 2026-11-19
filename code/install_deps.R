@@ -12,8 +12,8 @@
 # message() semantics: arguments pasted with no separator, newline appended.
 say <- function(...) cat(..., "\n", sep = "")
 workflow_deps <- list(
-  "RR5 rainfall     (code/get_rr5_archive.R / code/append_rr5_master.R)" =
-    c("httr2", "dplyr", "purrr", "tibble", "readr"),
+  "RR5 rainfall     (code/get_rr5_archive.R / code/hcdp_db_acquisition.R)" =
+    c("httr2", "jsonlite", "dplyr", "purrr", "tibble", "readr"),
   "All-networks API (code/get_hi_api_obs_all.R / code/append_hi_api_master.R)" =
     c("httr2", "dplyr", "purrr", "tibble", "readr"),
   "Station catalog  (get_hi_station_catalog.R / append_catalog_master.R)" =

@@ -245,9 +245,10 @@ data_rows <- obs_long |>
 var_rows <- obs_long |>
   distinct(variable, unit)
 # Station metadata is upserted every run, as in the MADIS and NWS API
-# workflows. station_name is the product's location text (the master list's
-# name for a gauge no longer in the newest product); skn / lat / lng are NA
-# where the master list has no unambiguous NWS.id match.
+# workflows. station_name is the product's location text -- or the master
+# list's name for a gauge no longer in the newest product, or the gauge's ID
+# if neither has one, so a batch is never sent with an empty name; skn / lat
+# / lng are NA where the master list has no unambiguous NWS.id match.
 amb <- intersect(unique(data_rows$station_id), meta_dupes)
 if (length(amb))
   say("Ambiguous NWS.id entries in master table this run (treated as unmatched): ",
@@ -255,7 +256,7 @@ if (length(amb))
 station_rows <- tibble(station_id = unique(data_rows$station_id)) |>
   left_join(select(stns, station_id, location), by = "station_id") |>
   left_join(meta_lookup, by = "station_id") |>
-  transmute(station_id, station_name = coalesce(location, master_name),
+  transmute(station_id, station_name = coalesce(location, master_name, station_id),
             skn, lat, lng) |>
   arrange(station_id)
 say(sum(!is.na(station_rows$skn)), " of ", nrow(station_rows),

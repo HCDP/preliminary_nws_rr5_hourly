@@ -102,8 +102,9 @@ UH-Mānoa gauges (`AALH1` Kaala, …), the 8 ASOS airports (RR5 lists them by
 their 3-letter IDs, `HNL`, `HTO`, …, where the master list uses `PHNL`,
 `PHTO`, …), and a few others — are stored with NA until their `NWS.id`s are
 added to the master list; the next run then fills them in, with no code
-change. `station_name` is the product's location text (the master list's
-name for a gauge no longer in the product). `HCDP_MASTER_META_URL` overrides
+change. `station_name` is the product's location text — or the master
+list's name for a gauge no longer in the product, or the gauge's ID if
+neither has one, so a run never sends an empty name. `HCDP_MASTER_META_URL` overrides
 the list's URL.
 
 ## Timestamps are UTC
